@@ -1,5 +1,5 @@
 FROM phusion/baseimage:0.9.15
-MAINTAINER gfjardim <gfjardim@gmail.com>
+MAINTAINER dcflachs <dcflachs@gmail.com>
 
 #########################################
 ##        ENVIRONMENTAL CONFIG         ##
@@ -11,6 +11,7 @@ ENV HOME            /root
 ENV LC_ALL          C.UTF-8
 ENV LANG            en_US.UTF-8
 ENV LANGUAGE        en_US.UTF-8
+ENV TERM            xterm
 
 # Use baseimage-docker's init system
 CMD ["/sbin/my_init"]
@@ -28,6 +29,10 @@ ADD config.sh /etc/my_init.d/config.sh
 # Add services to runit
 ADD crashplan.sh /etc/service/crashplan/run
 
+ADD supervisord.conf /root/
+
+ADD xrdp.ini /root/
+
 RUN chmod +x /etc/service/*/run /etc/my_init.d/*
 
 #########################################
@@ -36,6 +41,7 @@ RUN chmod +x /etc/service/*/run /etc/my_init.d/*
 
 VOLUME /data
 EXPOSE 4243 4242
+EXPOSE 3389
 
 #########################################
 ##         RUN INSTALL SCRIPT          ##
