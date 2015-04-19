@@ -39,7 +39,6 @@ RUN chmod +x /etc/service/*/run /etc/my_init.d/*
 ##         EXPORTS AND VOLUMES         ##
 #########################################
 
-VOLUME /data
 EXPOSE 4243 4242
 EXPOSE 3389
 
