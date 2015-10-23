@@ -12,8 +12,8 @@ usermod -g 100 nobody
 usermod -d /home nobody
 chown -R nobody:users /home
 
-# Disable SSH
-rm -rf /etc/service/sshd /etc/my_init.d/00_regen_ssh_host_keys.sh
+# Disable some services
+rm -rf /etc/service/sshd /etc/service/cron /etc/service/syslog-ng /etc/my_init.d/00_regen_ssh_host_keys.sh
 
 #########################################
 ##    REPOSITORIES AND DEPENDENCIES    ##
@@ -45,6 +45,11 @@ apt-get install -qy -f php5-cli \
                     wget \
                     bzip2
 
+apt-get install -qy -f php5-dev libpcre3-dev
+pecl channel-update pecl.php.net
+yes | pecl install -f channel://pecl.php.net/apcu-4.0.7
+apt-get remove -qy -f php5-dev libpcre3-dev
+
 #########################################
 ##  FILES, SERVICES AND CONFIGURATION  ##
 #########################################
@@ -67,6 +72,13 @@ EOT
 # CONFIG
 cat <<'EOT' > /etc/my_init.d/config.sh
 #!/bin/bash
+
+# # Upgrade ownCloud
+# if [[ ! -f /tmp/.occ_updated ]]; then
+#   /sbin/setuser nobody php /var/www/owncloud/occ upgrade
+#   /usr/bin/php /opt/fix_config.php
+#   touch /tmp/.occ_updated
+# fi
 
 # Fix the timezone
 if [[ $(cat /etc/timezone) != $TZ ]] ; then
@@ -104,6 +116,11 @@ if [[ -d /var/www/owncloud/config ]]; then
   ln -sf /var/www/owncloud/data/config/ /var/www/owncloud/config
 fi
 
+# Copy ca-bundle file to config
+if [[ ! -f /var/www/owncloud/config/ca-bundle.crt  ]]; then
+  cp /opt/ca-bundle.crt /var/www/owncloud/config/ca-bundle.crt 
+fi
+
 chown -R nobody:users /var/www/owncloud
 EOT
 
@@ -126,6 +143,11 @@ pm.max_requests = 500
 php_admin_value[upload_max_filesize] = 100G
 php_admin_value[post_max_size] = 100G
 php_admin_value[default_charset] = UTF-8
+env[HOSTNAME] = $HOSTNAME
+env[PATH] = /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+env[TMP] = /tmp
+env[TMPDIR] = /tmp
+env[TEMP] = /tmp
 EOT
 
 # NGINX config
@@ -143,7 +165,9 @@ http {
   sendfile on;
   tcp_nopush on;
   tcp_nodelay on;
-  keepalive_timeout 65;
+  keepalive_timeout 1200;
+  proxy_read_timeout  1800;
+  fastcgi_read_timeout 1800;
   types_hash_max_size 2048;
   include /etc/nginx/mime.types;
   default_type application/octet-stream;
@@ -156,6 +180,9 @@ http {
   include /etc/nginx/sites-enabled/*;
 }
 EOT
+
+#Create DH Parameters File
+openssl dhparam -out /etc/ssl/certs/dhparam.pem 4096
 
 # NGINX site
 rm -f /etc/nginx/sites-enabled/default
@@ -170,6 +197,16 @@ server {
 
   ssl_certificate /opt/server.pem;
   ssl_certificate_key /opt/server.key;
+  
+  ssl_dhparam /etc/ssl/certs/dhparam.pem;
+
+  ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+  ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:ECDHE-RSA-AES128-GCM-SHA256:AES256+EECDH:DHE-RSA-AES128-GCM-SHA256:AES256+EDH:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA256:DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA:ECDHE-RSA-DES-CBC3-SHA:EDH-RSA-DES-CBC3-SHA:AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-SHA256:AES128-SHA256:AES256-SHA:AES128-SHA:DES-CBC3-SHA:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!MD5:!PSK:!RC4";
+
+  ssl_prefer_server_ciphers on;
+  ssl_session_cache shared:SSL:10m;
+
+  add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
 
   # Force SSL
   error_page 497 https://$host:DEFAULT_PORT$request_uri;
@@ -277,6 +314,19 @@ server {
 }
 EOT
 
+cat <<'EOT' > /opt/fix_config.php
+<?PHP
+$config_file = "/var/www/owncloud/config/config.php";
+require_once($config_file);
+
+# Change values
+$CONFIG['memcache.local'] = '\OC\Memcache\APCu';
+
+# Save file
+file_put_contents("${config_file}", '<?PHP'.PHP_EOL.'$CONFIG = '.var_export($CONFIG, TRUE).PHP_EOL.'?>' );
+?>
+EOT
+
 chmod -R +x /etc/service/ /etc/my_init.d/
 
 #########################################
@@ -288,11 +338,13 @@ mkdir -p /var/www/
 HTML=$(wget -qO - https://owncloud.org/changelog/)
 REGEX="(https://download.owncloud.org/community/owncloud-[0-9.]*tar.bz2)"
 if [[ $HTML =~ $REGEX ]]; then
- curl -s -k -L "${BASH_REMATCH[1]}" | tar -jx -C /var/www
+  URL=${BASH_REMATCH[1]}
 else
   exit 1
 fi
+curl -s -k -L "${URL}" | tar -jx -C /var/www
 rm /var/www/owncloud/.user.ini
+cp /var/www/owncloud/config/ca-bundle.crt /opt/ca-bundle.crt
 
 #########################################
 ##                 CLEANUP             ##

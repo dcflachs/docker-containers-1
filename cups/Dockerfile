@@ -1,12 +1,11 @@
-FROM phusion/baseimage:0.9.15
+FROM phusion/baseimage:0.9.16
 MAINTAINER gfjardim <gfjardim@gmail.com>
 
 #########################################
 ##        ENVIRONMENTAL CONFIG         ##
 #########################################
 # Set correct environment variables
-ENV HOME="/root" LC_ALL="C.UTF-8" LANG="en_US.UTF-8" LANGUAGE="en_US.UTF-8"
-
+ENV HOME="/root" LC_ALL="C.UTF-8" LANG="en_US.UTF-8" LANGUAGE="en_US.UTF-8" GIT_REPO="gfjardim/nzbget-updates"
 # Use baseimage-docker's init system
 CMD ["/sbin/my_init"]
 
@@ -19,5 +18,6 @@ RUN chmod +x /tmp/install.sh && /tmp/install.sh && rm /tmp/install.sh
 #########################################
 ##         EXPORTS AND VOLUMES         ##
 #########################################
-VOLUME /config /movies
-EXPOSE 8096 7359/udp 1900/udp
+# Export volumes
+VOLUME /config /etc/cups/ /var/log/cups /var/spool/cups /var/cache/cups
+EXPOSE 631
